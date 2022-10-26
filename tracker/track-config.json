@@ -1,0 +1,27 @@
+{
+    "CompassConf": {
+        "Declination": 10,
+        "Inclination": 0
+    },
+
+    "AltConf": {
+        "AltDirGPIO": 18,
+        "AltStepGPIO": 16,
+        "AltOffset": 0,
+        "AltMax": 90,
+        "AltMin": 0,
+        "GearRatio": 44
+    },
+
+    "AziConf": {
+        "AziDirGPIO": 13,
+        "AziStepGPIO": 19,
+        "AziOffset": 0,
+        "GearRatio": 144
+    },
+
+    "ms1pin": 17,
+    "ms2pin": 24,
+    "StepMode": 1,
+    "stellariumAPI": "http://127.0.0.1:8090/api/main/view?coord=altAz"
+}
