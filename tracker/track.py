@@ -6,15 +6,15 @@ import math
 import sys  # argv
 import time  # sleep
 
-REAL_MOTOR = True
+REAL_MOTOR = False
 
 if REAL_MOTOR:
-    import sim_hardware.sim_GPIO as GPIO
-    #import RPi.GPIO as GPIO
+    #import sim_hardware.sim_GPIO as GPIO
+    import RPi.GPIO as GPIO
 else:
     import sim_hardware.sim_GPIO as GPIO
     from sim_hardware.sim_motor import vMotor
-    from motor_control import rotate
+    #from motor_control import rotate
 
 from motor_control import MotorController, MSTEP_MODES
 
@@ -246,16 +246,12 @@ try:
     while True:
         #Get Azi and Alt from Stellarium in degrees
         targAzi, targAlt = getData()
-        #print("\n\nNew Azimuth: " + str(targAzi) + "  Altitude: " + str(targAlt))
+        
+        if ULTRA_VERBOSE:
+            print("\n\nNew Target Azimuth: " + str(targAzi) + "\nNew Target Altitude: " + str(targAlt))
 
-        if REAL_MOTOR:
-            ### Rotate motors ###
-            aziMotor.rotate(targAzi)
-            altMotor.rotate(targAlt, ccLimit=trackConfig["AltConf"]["AltMin"], cwLimit=trackConfig["AltConf"]["AltMax"])
-        else:
-            ### Rotate vMotors ###
-            rotate(aziMotor, targAzi)
-            rotate(altMotor, targAlt, ccLimit=trackConfig["AltConf"]["AltMin"], cwLimit=trackConfig["AltConf"]["AltMax"])
+        aziMotor.rotate(targAzi)
+        altMotor.rotate(targAlt, ccLimit=trackConfig["AltConf"]["AltMin"], cwLimit=trackConfig["AltConf"]["AltMax"])
 
         time.sleep(UPDATE_DELAY)
 finally:

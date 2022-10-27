@@ -257,61 +257,6 @@ def getData() -> tuple[float, float]:
     return azimuth, altitude
 
 
-###################################
-########## vMotor ONLY ############
-###################################
-
-def rotate(motor: vMotor, targDeg: float, ccLimit: float = None, cwLimit: float = None, useGearOut:bool = True) -> bool:
-    '''Steps a motor to the target degree position of output gear or motor (see `useGearOut`)
-    
-    **This is NOT for real motors. Use the MotorController class for controlling real motors.**
-
-    `targDeg`: target degree position (0 <= targDeg < 360)
-    `ccLimit`: inclusive counterclockwise limit in degrees. defaults to None
-    `cwLimit`: inclusive clockwise limit in degrees. defaults to None
-    `useGearOut`: whether or not targDeg is in terms of output gear position. defaults to True
-    Note: When a limit is None, it will be limitless in that direction.
-    Returns True if motor moves, false otherwise.
-    '''
-    if not isinstance(motor, vMotor):
-        raise TypeError("Error: This rotate() function is for vMotors only. Maybe you meant to use MotorController.rotate() for a real motor")
-
-    targDeg %= 360
-    relMsteps = MotorController._closestLoopMovement(motor._msteps, motor.degreesToMsteps(targDeg, useGearOut),
-                                                     motor.STEPS_PER_REV * motor._mstepMode * motor._gearRatio)
-
-    if not relMsteps:
-        return False # no movement
-
-    if VERBOSE:
-        print(f"{motor.name}: Requested rotation to {targDeg} degrees")
-
-    isCCW = relMsteps < 0
-
-    if VERBOSE:
-        print(f"{motor.name}: Rotating {relMsteps} steps ({'CC' if isCCW else 'CW'})")
-
-    GPIO.output(motor.PINS["dir"], isCCW)
-    for _ in range(abs(relMsteps)):
-        if ((isCCW and ((ccLimit is None) or not ((motor._msteps - 1) <= motor.degreesToMsteps(ccLimit, useGearOut))))
-            or (not isCCW and ((cwLimit is None) or not ((motor._msteps + 1) >= motor.degreesToMsteps(cwLimit, useGearOut))))):
-            GPIO.output(motor.PINS["step"], GPIO.HIGH)
-            sleep(DELAY)
-            GPIO.output(motor.PINS["step"], GPIO.LOW)
-            sleep(DELAY)
-        else:
-            print(f"{motor.name}: Limit reached. Rotation failed!")
-            return False  # no movement
-
-    if VERBOSE:
-        print(f"{motor.name}: Rotation successful!\n")
-        motor.debugStatus()
-
-    return True  # successful movement
-
-###################################
-
-
 # Testing main
 if __name__ == "__main__":
     ### initialize motors ###
@@ -358,14 +303,8 @@ if __name__ == "__main__":
         while True:
             targAzi, targAlt = getData()
 
-            ### Rotate motors ###
-            # aziMotor.rotate(targAzi)
-            # altMotor.rotate(targAlt, ccLimit=0, cwLimit=90)
-            #####################
-
-            ## Rotate vMotors ###
-            rotate(aziMotor, targAzi)
-            rotate(altMotor, targAlt, ccLimit=0, cwLimit=90)
-            ######################
+            aziMotor.rotate(targAzi)
+            altMotor.rotate(targAlt, ccLimit=0, cwLimit=90)
+    
     finally:
         GPIO.cleanup()
