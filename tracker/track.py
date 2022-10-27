@@ -223,15 +223,22 @@ altPins = (trackConfig["AltConf"]["AltStepGPIO"],
 
 if REAL_MOTOR:
     ### initialize motors ###
-    aziMotor = MotorController(aziPins, 200, name="Azimuth")
-    altMotor = MotorController(altPins, 200, name="Altitude")
+    aziMotor = MotorController(aziPins, stepsPerRev=200, gearRatio=trackConfig["AziConf"]["GearRatio"], name="Azimuth")
+    altMotor = MotorController(altPins, stepsPerRev=200, gearRatio=trackConfig["AltConf"]["GearRatio"], name="Altitude")
 else:
     ### vMotor alternative ###
-    aziMotor = vMotor(aziPins, 200, name="Azimuth")
-    altMotor = vMotor(altPins, 200, name="Altitude")
+    aziMotor = vMotor(aziPins, stepsPerRev=200, gearRatio=trackConfig["AziConf"]["GearRatio"], name="Azimuth")
+    altMotor = vMotor(altPins, stepsPerRev=200, gearRatio=trackConfig["AltConf"]["GearRatio"], name="Altitude")
 
     GPIO.vPlugIn(aziMotor, aziPins)
     GPIO.vPlugIn(altMotor, altPins)
+
+    if VERBOSE:
+        print("\nInitial state: ")
+        aziMotor.debugSettings()
+        altMotor.debugSettings()
+        aziMotor.debugStatus()
+        altMotor.debugStatus()
 
 try:
     #Main update loop
@@ -243,12 +250,12 @@ try:
         if REAL_MOTOR:
             ### Rotate motors ###
             aziMotor.rotate(targAzi)
-            altMotor.rotate(targAlt, ccLimit=0, cwLimit=90)
+            altMotor.rotate(targAlt, ccLimit=trackConfig["AltConf"]["AltMin"], cwLimit=trackConfig["AltConf"]["AltMax"])
         else:
             ### Rotate vMotors ###
             rotate(aziMotor, targAzi)
-            rotate(altMotor, targAlt, ccLimit=0, cwLimit=90)
-        
+            rotate(altMotor, targAlt, ccLimit=trackConfig["AltConf"]["AltMin"], cwLimit=trackConfig["AltConf"]["AltMax"])
+
         time.sleep(UPDATE_DELAY)
 finally:
     GPIO.cleanup()
