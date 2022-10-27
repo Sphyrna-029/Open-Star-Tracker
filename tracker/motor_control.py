@@ -5,11 +5,11 @@ from os.path import exists
 from time import sleep
 from urllib.request import urlopen
 
-import RPi.GPIO as GPIO
+#import RPi.GPIO as GPIO
 
 # Optional sim hardware for testing
-# import sim_hardware.sim_GPIO as GPIO
-# from sim_hardware.sim_motor import vMotor
+import sim_hardware.sim_GPIO as GPIO
+from sim_hardware.sim_motor import vMotor
 
 
 # Module settings
@@ -20,7 +20,7 @@ DATA_SRC = r"http://localhost:8090/api/main/view?coord=altAz"
 
 
 # MotorController constants
-DELAY = 0.001  # Delay between GPIO.output() calls in seconds
+DELAY = 0.01  # Delay between GPIO.output() calls in seconds
 MSTEP_MODES: dict[int, tuple[bool, bool]] = {
     1: (GPIO.LOW, GPIO.LOW),
     2: (GPIO.HIGH, GPIO.LOW),
@@ -110,6 +110,12 @@ class MotorController:
             raise KeyError("Error: Invalid mstepMode", newMode) from exc
 
         GPIO.output((self.PINS["ms1"], self.PINS["ms2"]), newState)
+
+        # recalibrate to new mode resolution
+        self._msteps += MotorController._closestLoopMovement(self._msteps,
+                                                             self._msteps + (newMode - (self._msteps % newMode)),
+                                                             newMode)
+        self._msteps = (self._msteps * newMode) // self._mstepMode  # convert to new mode units
         self._mstepMode = newMode
 
     def _step(self):
@@ -129,7 +135,8 @@ class MotorController:
         Note: When a limit is None, it will be limitless in that direction.
         Returns True if motor moves, false otherwise.
         '''
-        relMsteps = MotorController._closestLoopMovement(self.msteps, self.degreesToMsteps(targDeg), self.STEPS_PER_REV * self._mstepMode)
+        relMsteps = MotorController._closestLoopMovement(self.msteps, self.degreesToMsteps(targDeg),
+                                                         self.STEPS_PER_REV * self._mstepMode)
         
         if not relMsteps:
             return False # no movement
@@ -226,9 +233,9 @@ def getData():
     return azimuth, altitude
 
 
-#####################################################
-########## Pre-MotorController Functions ############
-#####################################################
+###################################
+########## vMotor ONLY ############
+###################################
 
 def rotate(motor: vMotor, targDeg: float, ccLimit: float = None, cwLimit: float = None) -> bool:
     '''Steps a vMotor to the target degree position. **This is NOT for real motors.
@@ -282,22 +289,22 @@ def rotate(motor: vMotor, targDeg: float, ccLimit: float = None, cwLimit: float 
 
     return True  # successful movement
 
-#####################################################
+###################################
 
 
 # Testing main
 if __name__ == "__main__":
     ### initialize motors ###
-    aziMotor = MotorController((16, 18, 17, 24), 200, name="Azimuth")
-    altMotor = MotorController((19, 13, 17, 24), 200, name="Altitude")
+    # aziMotor = MotorController((16, 18, 17, 24), 200, name="Azimuth")
+    # altMotor = MotorController((19, 13, 17, 24), 200, name="Altitude")
     #########################
 
     ### vMotor alternative ###
-    # aziMotor = vMotor((16, 18, 17, 24), 200, name="Azimuth")
-    # altMotor = vMotor((19, 13, 17, 24), 200, name="Altitude")
+    aziMotor = vMotor((16, 18, 17, 24), 200, name="Azimuth")
+    altMotor = vMotor((19, 13, 17, 24), 200, name="Altitude")
 
-    # GPIO.vPlugIn(aziMotor, (16, 18, 17, 24))
-    # GPIO.vPlugIn(altMotor, (19, 13, 17, 24))
+    GPIO.vPlugIn(aziMotor, (16, 18, 17, 24))
+    GPIO.vPlugIn(altMotor, (19, 13, 17, 24))
     ##########################
 
     trackConfig = loadConfig()
@@ -316,8 +323,8 @@ if __name__ == "__main__":
     GPIO.setup(trackConfig["AltConf"]["AltDirGPIO"], GPIO.OUT)
 
     # Microstepping: 8
-    GPIO.output(trackConfig["ms1pin"], GPIO.HIGH)
-    GPIO.output(trackConfig["ms2pin"], GPIO.HIGH)
+    GPIO.output((trackConfig["ms1pin"], trackConfig["ms2pin"]), MSTEP_MODES[8])
+
 
     if VERBOSE:
         print("Initial state: ")
@@ -332,13 +339,13 @@ if __name__ == "__main__":
             targAzi, targAlt = getData()
 
             ### Rotate motors ###
-            aziMotor.rotate(targAzi)
-            altMotor.rotate(targAlt, ccLimit=0, cwLimit=90)
+            # aziMotor.rotate(targAzi)
+            # altMotor.rotate(targAlt, ccLimit=0, cwLimit=90)
             #####################
 
             ## Rotate vMotors ###
-            # rotate(aziMotor, targAzi)
-            # rotate(altMotor, targAlt, ccLimit=0, cwLimit=90)
+            rotate(aziMotor, targAzi)
+            rotate(altMotor, targAlt, ccLimit=0, cwLimit=90)
             ######################
     finally:
         GPIO.cleanup()

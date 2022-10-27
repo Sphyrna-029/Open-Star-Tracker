@@ -1,23 +1,33 @@
 #!/usr/bin/python
 from urllib.request import urlopen
-import RPi.GPIO as GPIO
+from urllib.error import URLError
 import json
 import math
 import sys  # argv
 import time  # sleep
 
-# import sim_hardware.sim_GPIO as GPIO
+REAL_MOTOR = False
 
-CONFIG_FILE = "track-config.json"
+if REAL_MOTOR:
+    import RPi.GPIO as GPIO
+else:
+    import sim_hardware.sim_GPIO as GPIO
+    from sim_hardware.sim_motor import vMotor
+    from motor_control import rotate
+
+from motor_control import MotorController, MSTEP_MODES
+
 VERBOSE = True
 ULTRA_VERBOSE = False
+CONFIG_FILE = r"track-config.json"
 
 ################################## Load Config ##################################
 try:
     with open(CONFIG_FILE) as configfile:
         trackConfig = json.load(configfile)
         configfile.close()
-        print("Config loaded!")
+        if VERBOSE:
+            print("Config loaded from", CONFIG_FILE)
 except OSError as exc:
     raise OSError(f"Config {CONFIG_FILE} not found. Make sure this is in same directory as", sys.argv[0]) from exc
 ################################## End Load Config ##################################
@@ -27,7 +37,7 @@ targetData = ""
 trackerAltitude = 0 #Tracker Altitude in degrees 0 - 90
 trackerAzimuth = 0 #Tracker Azimuth in degrees 0 - 360
 GPIO_DELAY = 0.01  # delay between GPIO commands in seconds
-UPDATE_DELAY = 0.1
+UPDATE_DELAY = 0.1  # delay between data updates and rotate commands in seconds
 
 
 #Get data from stellarium
@@ -36,9 +46,8 @@ def getData():
 
     try:
         stellariumResponse = urlopen(trackConfig["stellariumAPI"])
-
-    except:
-        print(f"Failed to access stellarium api: {trackConfig['stellariumAPI']}")
+    except URLError as exc:
+        raise URLError(f"Failed to access stellarium api: {trackConfig['stellariumAPI']}") from exc
 
     targetData = json.loads(stellariumResponse.read())
 
@@ -57,7 +66,6 @@ def getData():
     azimuth = (math.degrees(azimuth) * -1) + 180
     altitude = math.degrees(altitude)
 
-
     return azimuth, altitude
 
 
@@ -75,16 +83,15 @@ GPIO.setup(trackConfig["AziConf"]["AziDirGPIO"], GPIO.OUT)
 GPIO.setup(trackConfig["AltConf"]["AltStepGPIO"], GPIO.OUT)
 GPIO.setup(trackConfig["AltConf"]["AltDirGPIO"], GPIO.OUT)
 
-
 '''
-===============================
+===================================
  MS1        MS2        Mode
-===============================
+===================================
 Low         Low        Full step
 High        Low        Half step
 Low         High       Quarter step
 High        High       Eighth step
-===============================
+===================================
 '''
 
 def step(steps, dir, microsteps, motorpin, dir_pin):
@@ -203,13 +210,45 @@ def gotoAlt(target):
         trackerAltitude = target
 
 
+# pins in the form (step, dir, ms1, ms2)
+aziPins = (trackConfig["AziConf"]["AziStepGPIO"],
+           trackConfig["AziConf"]["AziDirGPIO"],
+           trackConfig["ms1pin"],
+           trackConfig["ms2pin"])
 
-#Placeholder main loop
-while True:
-    #Get Azi and Alt from Stellarium in degrees
-    azimuth, altitude = getData()
-    print("\n\nNew Azimuth: " + str(azimuth) + "  Altitude: " + str(altitude))
-    gotoAzi(azimuth)
-    gotoAlt(altitude)
+altPins = (trackConfig["AltConf"]["AltStepGPIO"],
+           trackConfig["AltConf"]["AltDirGPIO"],
+           trackConfig["ms1pin"],
+           trackConfig["ms2pin"])
 
-    time.sleep(UPDATE_DELAY)
+if REAL_MOTOR:
+    ### initialize motors ###
+    aziMotor = MotorController(aziPins, 200, name="Azimuth")
+    altMotor = MotorController(altPins, 200, name="Altitude")
+else:
+    ### vMotor alternative ###
+    aziMotor = vMotor(aziPins, 200, name="Azimuth")
+    altMotor = vMotor(altPins, 200, name="Altitude")
+
+    GPIO.vPlugIn(aziMotor, aziPins)
+    GPIO.vPlugIn(altMotor, altPins)
+
+try:
+    #Main update loop
+    while True:
+        #Get Azi and Alt from Stellarium in degrees
+        targAzi, targAlt = getData()
+        #print("\n\nNew Azimuth: " + str(targAzi) + "  Altitude: " + str(targAlt))
+
+        if REAL_MOTOR:
+            ### Rotate motors ###
+            aziMotor.rotate(targAzi)
+            altMotor.rotate(targAlt, ccLimit=0, cwLimit=90)
+        else:
+            ### Rotate vMotors ###
+            rotate(aziMotor, targAzi)
+            rotate(altMotor, targAlt, ccLimit=0, cwLimit=90)
+        
+        time.sleep(UPDATE_DELAY)
+finally:
+    GPIO.cleanup()
