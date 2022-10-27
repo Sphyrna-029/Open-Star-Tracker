@@ -1,26 +1,26 @@
-'''Higher-level config and motor control functions'''
-import json
-import math
-from os.path import exists
+'''Create MotorController objects for higher-level motor control'''
 from time import sleep
-from urllib.request import urlopen
 
-#import RPi.GPIO as GPIO
+import RPi.GPIO as GPIO
 
-# Optional sim hardware for testing
-import sim_hardware.sim_GPIO as GPIO
-from sim_hardware.sim_motor import vMotor
+# import sim_hardware.sim_GPIO as GPIO  # Optional sim hardware for testing
 
 
 # Module settings
 VERBOSE = True
-ULTRA_VERBOSE = False
-CONFIG_FILE = r"track-config.json"
-DATA_SRC = r"http://localhost:8090/api/main/view?coord=altAz"
 
 
 # MotorController constants
-DELAY = 0.01  # Delay between GPIO.output() calls in seconds
+GPIO_DELAY = 0.001  # Delay between GPIO.output() calls in seconds
+
+# =======================================
+#  MS1        MS2        Mode
+# =======================================
+# Low         Low        [1] Full step
+# High        Low        [2] Half step
+# Low         High       [4] Quarter step
+# High        High       [8] Eighth step
+# =======================================
 MSTEP_MODES: dict[int, tuple[bool, bool]] = {
     1: (GPIO.LOW, GPIO.LOW),
     2: (GPIO.HIGH, GPIO.LOW),
@@ -119,12 +119,12 @@ class MotorController:
                                                              newMode)
         self._msteps = int((self._msteps * newMode) / self._mstepMode)  # convert to new mode units
         self._mstepMode = newMode
-    
+
     @property
     def direction(self) -> str:
         '''Motor's direction as "CC" or "CW"'''
         return "CC" if self._dir < 0 else "CW"
-    
+
     @direction.setter
     def direction(self, newDir: str):
         if newDir.upper() == "CW":
@@ -138,9 +138,9 @@ class MotorController:
 
     def _step(self):
         GPIO.output(self.PINS["step"], GPIO.HIGH)
-        sleep(DELAY)
+        sleep(GPIO_DELAY)
         GPIO.output(self.PINS["step"], GPIO.LOW)
-        sleep(DELAY)
+        sleep(GPIO_DELAY)
         self._units = (self._units + self._dir) % (self.STEPS_PER_REV * self._mstepMode * self._gearRatio)
 
     def rotate(self, targDeg: float, ccLimit: float = None, cwLimit: float = None, useGearOut:bool = True) -> bool:
@@ -160,13 +160,11 @@ class MotorController:
         if not relMsteps:
             return False # no movement
 
-        if VERBOSE:
-            print(f"{self.name}: Requested rotation to {targDeg} degrees")
-
         isCC = relMsteps < 0
         newDir = "CC" if isCC else "CW"
 
         if VERBOSE:
+            print(f"{self.name}: Requested rotation to {targDeg} degrees")
             print(f"{self.name}: Rotating {relMsteps} steps ({newDir})")
 
         self.direction = newDir
@@ -175,7 +173,7 @@ class MotorController:
                     or (not isCC and ((cwLimit is None) or not ((self._units + 1) >= self.degreesToMsteps(cwLimit, useGearOut))))):
                 self._step()
             else:
-                print(f"{self.name}: Limit reached. Rotation failed!")
+                print(f"{self.name}: Limit reached. Rotation failed!\n")
                 return False  # no movement
 
         if VERBOSE:
@@ -209,102 +207,3 @@ class MotorController:
         print("Motor degree position:", self.degrees)
         print("Output gear degree position:", self.gearOutDegrees)
         print()
-
-
-def loadConfig():
-    '''Returns loaded JSON config'''
-    config = None
-    if not exists(CONFIG_FILE):
-        raise Exception(f"Config {CONFIG_FILE} not found. Make sure this is in your working directory.")
-
-    with open(CONFIG_FILE) as configFile:
-        config = json.load(configFile)
-        configFile.close()
-        if VERBOSE:
-            print("Config loaded from", CONFIG_FILE)
-
-    return config
-
-
-def getData() -> tuple[float, float]:
-    '''Returns tracking data from Stellarium in horizontal coordinates.
-    (azimuth, altitude)'''
-    try:
-        stellariumResponse = urlopen(DATA_SRC)
-
-    except:
-        print(f"Failed to access stellarium api: {DATA_SRC}")
-
-    targetData = json.loads(stellariumResponse.read())
-
-    if ULTRA_VERBOSE:
-        print("Fetching data from", DATA_SRC)
-        print(targetData)
-
-    targetData = json.loads(targetData["altAz"])
-
-    x, y, z = float(targetData[0]), float(targetData[1]), float(targetData[2])
-
-    #Convert stellarium bullshit view api data to radians
-    altitude = math.asin( z )
-    azimuth = math.atan2(y, x)
-
-    #Convert from radians to degrees
-    azimuth = (math.degrees(azimuth) * -1) + 180
-    altitude = math.degrees(altitude)
-
-
-    return azimuth, altitude
-
-
-# Testing main
-if __name__ == "__main__":
-    ### initialize motors ###
-    # aziMotor = MotorController((16, 18, 17, 24), 200, name="Azimuth")
-    # altMotor = MotorController((19, 13, 17, 24), 200, name="Altitude")
-    #########################
-
-    ### vMotor alternative ###
-    aziMotor = vMotor((16, 18, 17, 24), 200, name="Azimuth")
-    altMotor = vMotor((19, 13, 17, 24), 200, name="Altitude")
-
-    GPIO.vPlugIn(aziMotor, (16, 18, 17, 24))
-    GPIO.vPlugIn(altMotor, (19, 13, 17, 24))
-    ##########################
-
-    trackConfig = loadConfig()
-
-    #EasyDriver
-    GPIO.setmode(GPIO.BCM)
-    GPIO.setup(trackConfig["ms1pin"], GPIO.OUT)
-    GPIO.setup(trackConfig["ms2pin"], GPIO.OUT)
-
-    #Azimuth
-    GPIO.setup(trackConfig["AziConf"]["AziStepGPIO"], GPIO.OUT)
-    GPIO.setup(trackConfig["AziConf"]["AziDirGPIO"], GPIO.OUT)
-
-    #Elevation
-    GPIO.setup(trackConfig["AltConf"]["AltStepGPIO"], GPIO.OUT)
-    GPIO.setup(trackConfig["AltConf"]["AltDirGPIO"], GPIO.OUT)
-
-    # Microstepping: 8
-    GPIO.output((trackConfig["ms1pin"], trackConfig["ms2pin"]), MSTEP_MODES[8])
-
-
-    if VERBOSE:
-        print("Initial state: ")
-        aziMotor.debugSettings()
-        altMotor.debugSettings()
-        aziMotor.debugStatus()
-        altMotor.debugStatus()
-
-
-    try:
-        while True:
-            targAzi, targAlt = getData()
-
-            aziMotor.rotate(targAzi)
-            altMotor.rotate(targAlt, ccLimit=0, cwLimit=90)
-    
-    finally:
-        GPIO.cleanup()
