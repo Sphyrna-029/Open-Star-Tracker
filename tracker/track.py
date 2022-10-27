@@ -6,10 +6,11 @@ import math
 import sys  # argv
 import time  # sleep
 
-REAL_MOTOR = False
+REAL_MOTOR = True
 
 if REAL_MOTOR:
-    import RPi.GPIO as GPIO
+    import sim_hardware.sim_GPIO as GPIO
+    #import RPi.GPIO as GPIO
 else:
     import sim_hardware.sim_GPIO as GPIO
     from sim_hardware.sim_motor import vMotor

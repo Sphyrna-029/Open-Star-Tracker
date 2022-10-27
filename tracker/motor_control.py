@@ -36,7 +36,7 @@ class MotorController:
         '''Create a MotorController object
 
         `pins`: pin/BCM GPIO numbers (step, dir, ms1, ms2)
-        `stepsPerRev`: number of full steps per 1 full revolution
+        `stepsPerRev`: number of full steps per 1 full revolution of the motor
         `gearRatio` (optional): gear ratio to an output gear; defaults to 1
         `name` (optional): will autogenerate name if None provided
         '''
@@ -78,12 +78,12 @@ class MotorController:
         else:
             lower -= loopSize
 
-        return (lower - currPos) if ((currPos - lower) < (upper - currPos)) else (upper - currPos)
+        return int((lower - currPos) if ((currPos - lower) < (upper - currPos)) else (upper - currPos))
 
     @property
     def steps(self) -> int:
         '''Motor's position in full steps. (0 <= steps < steps per rotation)'''
-        return self._units // self._mstepMode
+        return int(self._units / self._mstepMode)
 
     @property
     def msteps(self) -> int:
@@ -93,19 +93,19 @@ class MotorController:
     @property
     def degrees(self) -> float:
         '''Motor's position in degrees.'''
-        return self.mstepsToDegrees(self._units)
+        return float(self.mstepsToDegrees(self._units))
 
     @property
-    def gearOutDegrees(self):
+    def gearOutDegrees(self) -> float:
         '''Output gear's position in degrees.'''
-        return self.mstepsToDegrees(self._units) / self._gearRatio
+        return float(self.mstepsToDegrees(self._units) / self._gearRatio)
 
     @property
     def mstepMode(self) -> int:
         return self._mstepMode
 
     @mstepMode.setter
-    def mstepMode(self, newMode):
+    def mstepMode(self, newMode: int):
         try:
             newState = MSTEP_MODES[newMode]
         except KeyError as exc:
@@ -117,8 +117,24 @@ class MotorController:
         self._msteps += MotorController._closestLoopMovement(self._msteps,
                                                              self._msteps + (newMode - (self._msteps % newMode)),
                                                              newMode)
-        self._msteps = (self._msteps * newMode) // self._mstepMode  # convert to new mode units
+        self._msteps = int((self._msteps * newMode) / self._mstepMode)  # convert to new mode units
         self._mstepMode = newMode
+    
+    @property
+    def direction(self) -> str:
+        '''Motor's direction as "CC" or "CW"'''
+        return "CC" if self._dir < 0 else "CW"
+    
+    @direction.setter
+    def direction(self, newDir: str):
+        if newDir.upper() == "CW":
+            GPIO.output(self.PINS["dir"], GPIO.LOW)
+            self._dir = 1
+        elif newDir.upper() == "CC":
+            GPIO.output(self.PINS["dir"], GPIO.HIGH)
+            self._dir = -1
+        else:
+            raise ValueError('Error: direction must be either "CW" or "CC" (case insensitivie)')
 
     def _step(self):
         GPIO.output(self.PINS["step"], GPIO.HIGH)
@@ -128,17 +144,17 @@ class MotorController:
         self._units = (self._units + self._dir) % (self.STEPS_PER_REV * self._mstepMode * self._gearRatio)
 
     def rotate(self, targDeg: float, ccLimit: float = None, cwLimit: float = None, useGearOut:bool = True) -> bool:
-        '''Steps a motor to the target degree position
+        '''Steps a motor to the target degree position of output gear or motor (see `useGearOut`)
 
         `targDeg`: target degree position (0 <= targDeg < 360)
         `ccLimit`: inclusive counterclockwise limit in degrees. defaults to None
         `cwLimit`: inclusive clockwise limit in degrees. defaults to None
-        `useGearOut`: whether or not targDeg is in terms of output gear position. defaults to True
+        `useGearOut`: whether or not targDeg is in terms of output gear position or motor position. defaults to True
         Note: When a limit is None, it will be limitless in that direction.
         Returns True if motor moves, false otherwise.
         '''
         targDeg %= 360
-        relMsteps = MotorController._closestLoopMovement(self.msteps, self.degreesToMsteps(targDeg, useGearOut),
+        relMsteps = MotorController._closestLoopMovement(self._units, self.degreesToMsteps(targDeg, useGearOut),
                                                          self.STEPS_PER_REV * self._mstepMode * self._gearRatio)
 
         if not relMsteps:
@@ -147,15 +163,16 @@ class MotorController:
         if VERBOSE:
             print(f"{self.name}: Requested rotation to {targDeg} degrees")
 
-        isCCW = relMsteps < 0
+        isCC = relMsteps < 0
+        newDir = "CC" if isCC else "CW"
 
         if VERBOSE:
-            print(f"{self.name}: Rotating {relMsteps} steps ({'CC' if isCCW else 'CW'})")
+            print(f"{self.name}: Rotating {relMsteps} steps ({newDir})")
 
-        GPIO.output(self.PINS["dir"], isCCW)
+        self.direction = newDir
         for _ in range(abs(relMsteps)):
-            if ((isCCW and ((ccLimit is None) or not ((self.msteps - 1) <= self.degreesToMsteps(ccLimit, useGearOut))))
-                    or (not isCCW and ((cwLimit is None) or not ((self.msteps + 1) >= self.degreesToMsteps(cwLimit, useGearOut))))):
+            if ((isCC and ((ccLimit is None) or not ((self._units - 1) <= self.degreesToMsteps(ccLimit, useGearOut))))
+                    or (not isCC and ((cwLimit is None) or not ((self._units + 1) >= self.degreesToMsteps(cwLimit, useGearOut))))):
                 self._step()
             else:
                 print(f"{self.name}: Limit reached. Rotation failed!")
@@ -168,38 +185,34 @@ class MotorController:
         return True  # successful movement
 
     def debugSettings(self):
-        '''Displays motor settings'''
+        '''Displays MotorController settings'''
         print(self.name, "SETTINGS")
         print("Pins:", self.PINS)
-        print("Steps per revolution:", self.STEPS_PER_REV)
+        print("Direction:", self.direction)
+        print("Steps per motor rev:", self.STEPS_PER_REV)
         print("Microstepping:", ("Off" if (self._mstepMode == 1) else ("1/" + str(self._mstepMode))))
         if self._mstepMode != 1:
-            print("Microsteps per revolution:", self.STEPS_PER_REV * self._mstepMode)
-        print("Steps per gear revolution:", self.STEPS_PER_REV * self._gearRatio)
+            print("Microsteps per motor rev:", self.STEPS_PER_REV * self._mstepMode)
+        print("Steps per gear rev:", self.STEPS_PER_REV * self._gearRatio)
         if self._mstepMode != 1:
-            print("Microsteps per gear revolution:", self.STEPS_PER_REV * self._mstepMode * self._gearRatio)
+            print("Microsteps per gear rev:", self.STEPS_PER_REV * self._mstepMode * self._gearRatio)
         print("Gear ratio:", self._gearRatio)
         print()
 
     def debugStatus(self):
-        '''Displays position and target in (micro)steps and degrees'''
+        '''Displays motor and gear position in (micro)steps and degrees'''
         print(self.name, "STATUS")
-        print("Direction:", "CC" if (self._dir < 0) else "CW")
-        if self._mstepMode == 1:
-            print("Step position (relative to 1 motor revolution):", self.steps % self.STEPS_PER_REV, "of", self.STEPS_PER_REV)
-        else:
-            print(f"Microstep (1/{self._mstepMode}) position (relative to 1 motor revolution):", self._msteps % (self.STEPS_PER_REV * self._mstepMode), "of", self.STEPS_PER_REV * self._mstepMode)
-        if self._mstepMode == 1:
-            print("Step position (relative to 1 gear revolution):", self.steps, "of", self.STEPS_PER_REV * self._gearRatio)
-        else:
-            print(f"Microstep (1/{self._mstepMode}) position (relative to 1 gear revolution):", self._msteps, "of", self.STEPS_PER_REV * self._mstepMode * self._gearRatio)
-        print("Degree position:", self.degrees)
+        print("Direction:", self.direction)
+        stepLabel = "Step" if (self._mstepMode == 1) else f"Microstep (1/{self._mstepMode})"
+        print(stepLabel, "motor position:", self._units % (self.STEPS_PER_REV * self._mstepMode), "of", self.STEPS_PER_REV * self._mstepMode)
+        print(stepLabel, "gear position:", self._units % (self.STEPS_PER_REV * self._mstepMode * self._gearRatio), "of", self.STEPS_PER_REV * self._mstepMode * self._gearRatio)
+        print("Motor degree position:", self.degrees)
         print("Output gear degree position:", self.gearOutDegrees)
         print()
 
 
 def loadConfig():
-    '''Loads JSON config'''
+    '''Returns loaded JSON config'''
     config = None
     if not exists(CONFIG_FILE):
         raise Exception(f"Config {CONFIG_FILE} not found. Make sure this is in your working directory.")
@@ -213,8 +226,9 @@ def loadConfig():
     return config
 
 
-def getData():
-    '''Get data from Stellarium'''
+def getData() -> tuple[float, float]:
+    '''Returns tracking data from Stellarium in horizontal coordinates.
+    (azimuth, altitude)'''
     try:
         stellariumResponse = urlopen(DATA_SRC)
 
@@ -248,8 +262,9 @@ def getData():
 ###################################
 
 def rotate(motor: vMotor, targDeg: float, ccLimit: float = None, cwLimit: float = None, useGearOut:bool = True) -> bool:
-    '''Steps a vMotor to the target degree position. **This is NOT for real motors.
-    Use the MotorController class for controlling real motors.**
+    '''Steps a motor to the target degree position of output gear or motor (see `useGearOut`)
+    
+    **This is NOT for real motors. Use the MotorController class for controlling real motors.**
 
     `targDeg`: target degree position (0 <= targDeg < 360)
     `ccLimit`: inclusive counterclockwise limit in degrees. defaults to None
@@ -262,7 +277,7 @@ def rotate(motor: vMotor, targDeg: float, ccLimit: float = None, cwLimit: float 
         raise TypeError("Error: This rotate() function is for vMotors only. Maybe you meant to use MotorController.rotate() for a real motor")
 
     targDeg %= 360
-    relMsteps = MotorController._closestLoopMovement(motor.msteps, motor.degreesToMsteps(targDeg, useGearOut),
+    relMsteps = MotorController._closestLoopMovement(motor._msteps, motor.degreesToMsteps(targDeg, useGearOut),
                                                      motor.STEPS_PER_REV * motor._mstepMode * motor._gearRatio)
 
     if not relMsteps:
@@ -278,8 +293,8 @@ def rotate(motor: vMotor, targDeg: float, ccLimit: float = None, cwLimit: float 
 
     GPIO.output(motor.PINS["dir"], isCCW)
     for _ in range(abs(relMsteps)):
-        if ((isCCW and ((ccLimit is None) or not ((motor.msteps - 1) <= motor.degreesToMsteps(ccLimit, useGearOut))))
-            or (not isCCW and ((cwLimit is None) or not ((motor.msteps + 1) >= motor.degreesToMsteps(cwLimit, useGearOut))))):
+        if ((isCCW and ((ccLimit is None) or not ((motor._msteps - 1) <= motor.degreesToMsteps(ccLimit, useGearOut))))
+            or (not isCCW and ((cwLimit is None) or not ((motor._msteps + 1) >= motor.degreesToMsteps(cwLimit, useGearOut))))):
             GPIO.output(motor.PINS["step"], GPIO.HIGH)
             sleep(DELAY)
             GPIO.output(motor.PINS["step"], GPIO.LOW)
