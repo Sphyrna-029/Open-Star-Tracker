@@ -1,30 +1,32 @@
 #!/usr/bin/python
-from os.path import exists
 from urllib.request import urlopen
-import RPi.GPIO as GPIO, time
+import RPi.GPIO as GPIO
 import json
-import time
 import math
-import ast
+import sys  # argv
+import time  # sleep
 
+# import sim_hardware.sim_GPIO as GPIO
+
+CONFIG_FILE = "track-config.json"
+VERBOSE = True
+ULTRA_VERBOSE = False
 
 ################################## Load Config ##################################
-if not exists("track-config.json"):
-    print("Config track-config.json not found. Make sure this is in same directory as telescope.py")
-    exit()
-
-
-with open("track-config.json") as configfile:
-    trackConfig = json.load(configfile)
-    configfile.close()
-    print("Config loaded!")
+try:
+    with open(CONFIG_FILE) as configfile:
+        trackConfig = json.load(configfile)
+        configfile.close()
+        print("Config loaded!")
+except OSError as exc:
+    raise OSError(f"Config {CONFIG_FILE} not found. Make sure this is in same directory as", sys.argv[0]) from exc
 ################################## End Load Config ##################################
 
 #Init vars
 targetData = ""
 trackerAltitude = 0 #Tracker Altitude in degrees 0 - 90
 trackerAzimuth = 0 #Tracker Azimuth in degrees 0 - 360
-delay = 0.01  # 1 millisecond
+DELAY = 0.01  # delay between GPIO commands in seconds
 
 
 #Get data from stellarium
@@ -35,13 +37,14 @@ def getData():
         stellariumResponse = urlopen(trackConfig["stellariumAPI"])
 
     except:
-        print("Failed to access stellarium api: {}".format(trackConfig["stellariumAPI"]))
+        print(f"Failed to access stellarium api: {trackConfig['stellariumAPI']}")
 
     targetData = json.loads(stellariumResponse.read())
 
-    #print(targetData)
+    if ULTRA_VERBOSE:
+        print(targetData)
 
-    targetData = ast.literal_eval(targetData["altAz"])
+    targetData = json.loads(targetData["altAz"])
 
     x, y, z = float(targetData[0]), float(targetData[1]), float(targetData[2])
 
@@ -76,10 +79,10 @@ GPIO.setup(trackConfig["AltConf"]["AltDirGPIO"], GPIO.OUT)
 ===============================
  MS1        MS2        Mode
 ===============================
-Low             Low         Full step
-High        Low     Half step
-Low             High    Quarter step
-High        High        Eighth step
+Low         Low        Full step
+High        Low        Half step
+Low         High       Quarter step
+High        High       Eighth step
 ===============================
 '''
 
@@ -110,9 +113,9 @@ def step(steps, dir, microsteps, motorpin, dir_pin):
 
     while count < steps:
         GPIO.output(motorpin, GPIO.HIGH)
-        time.sleep(delay)
+        time.sleep(DELAY)
         GPIO.output(motorpin, GPIO.LOW)
-        time.sleep(delay)
+        time.sleep(DELAY)
         count += 1
 
 
