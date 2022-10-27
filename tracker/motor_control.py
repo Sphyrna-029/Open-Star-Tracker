@@ -5,11 +5,11 @@ from os.path import exists
 from time import sleep
 from urllib.request import urlopen
 
-# import RPi.GPIO as GPIO
+import RPi.GPIO as GPIO
 
 # Optional sim hardware for testing
-import sim_hardware.sim_GPIO as GPIO
-from sim_hardware.sim_motor import vMotor
+# import sim_hardware.sim_GPIO as GPIO
+# from sim_hardware.sim_motor import vMotor
 
 
 # Module settings
@@ -112,8 +112,11 @@ class MotorController:
         GPIO.output((self.PINS["ms1"], self.PINS["ms2"]), newState)
         self._mstepMode = newMode
 
-
     def _step(self):
+        GPIO.output(self.PINS["step"], GPIO.HIGH)
+        sleep(DELAY)
+        GPIO.output(self.PINS["step"], GPIO.LOW)
+        sleep(DELAY)
         self._units = (self._units + self._dir) % (self.STEPS_PER_REV * self._mstepMode)
 
     def rotate(self, targDeg: float, ccLimit: float = None, cwLimit: float = None, useGearOut:bool = True) -> bool:
@@ -142,11 +145,7 @@ class MotorController:
         GPIO.output(self.PINS["dir"], isCCW)
         for _ in range(abs(relMsteps)):
             if ((isCCW and ((ccLimit is None) or not ((self.msteps - 1) <= self.degreesToMsteps(ccLimit))))
-                or (not isCCW and ((cwLimit is None) or not ((self.msteps - 1) >= self.degreesToMsteps(cwLimit))))):
-                GPIO.output(self.PINS["step"], GPIO.HIGH)
-                sleep(DELAY)
-                GPIO.output(self.PINS["step"], GPIO.LOW)
-                sleep(DELAY)
+                    or (not isCCW and ((cwLimit is None) or not ((self.msteps - 1) >= self.degreesToMsteps(cwLimit))))):
                 self._step()
             else:
                 print(f"{self.name}: Limit reached. Rotation failed!")

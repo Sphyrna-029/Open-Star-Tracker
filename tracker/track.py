@@ -26,7 +26,8 @@ except OSError as exc:
 targetData = ""
 trackerAltitude = 0 #Tracker Altitude in degrees 0 - 90
 trackerAzimuth = 0 #Tracker Azimuth in degrees 0 - 360
-DELAY = 0.01  # delay between GPIO commands in seconds
+GPIO_DELAY = 0.01  # delay between GPIO commands in seconds
+UPDATE_DELAY = 0.1
 
 
 #Get data from stellarium
@@ -113,26 +114,10 @@ def step(steps, dir, microsteps, motorpin, dir_pin):
 
     while count < steps:
         GPIO.output(motorpin, GPIO.HIGH)
-        time.sleep(DELAY)
+        time.sleep(GPIO_DELAY)
         GPIO.output(motorpin, GPIO.LOW)
-        time.sleep(DELAY)
+        time.sleep(GPIO_DELAY)
         count += 1
-
-
-#Return the opposite of our current bearing. This lets us determine the fastest path to our destination
-def inverseDegree(x):
-
-    return (x + 180) % 360
-
-
-#Check if our azimuth is within a degree of tolerance of our target
-def rangeCheck(current, target, tolerance):
-    low = (target - tolerance) % 360
-    high = (target + tolerance) % 360
-
-    print(low, current, high)
-
-    return (current - low) % 360 <= (high - low) % 360
 
 
 #Convert steps to deg taking into account our step mode
@@ -160,12 +145,10 @@ def calcShortestTurn(currAzi, targAzi):
     else:
         lower -= 360
 
-    deg = (lower - currAzi) if ((currAzi - lower) < (upper - currAzi)) else (upper - currAzi)
+    deg = (currAzi - lower) if ((currAzi - lower) < (upper - currAzi)) else (upper - currAzi)
 
     if deg <= 0:
         dir = "cc"
-        #convert to pos
-        deg = deg * -1
 
     else:
         dir = "cw"
@@ -188,7 +171,6 @@ def gotoAzi(target):
 
     for steps in range(targetSteps):
          step(1, direction, trackConfig["StepMode"], trackConfig["AziConf"]["AziStepGPIO"], trackConfig["AziConf"]["AziDirGPIO"])
-         time.sleep(0.001)
          print("Azimuth Tolerance: " + str(trackerAzimuth - target) )
          trackerAzimuth = target
 
@@ -217,8 +199,7 @@ def gotoAlt(target):
 
     for steps in range(targetSteps):
         step(1, direction, trackConfig["StepMode"], trackConfig["AltConf"]["AltStepGPIO"], trackConfig["AltConf"]["AltDirGPIO"])
-        time.sleep(0.001)
-
+        print("Azimuth Tolerance: " + str(trackerAltitude - target) )
         trackerAltitude = target
 
 
@@ -231,4 +212,4 @@ while True:
     gotoAzi(azimuth)
     gotoAlt(altitude)
 
-    time.sleep(0.1)
+    time.sleep(UPDATE_DELAY)
