@@ -136,7 +136,8 @@ class MotorController:
         else:
             raise ValueError('Error: direction must be either "CW" or "CC" (case insensitivie)')
 
-    def _step(self):
+    def step(self):
+        '''Step the motor once in current direction with current microstep mode'''
         GPIO.output(self.PINS["step"], GPIO.HIGH)
         sleep(GPIO_DELAY)
         GPIO.output(self.PINS["step"], GPIO.LOW)
