@@ -1,9 +1,9 @@
 '''Create MotorController objects for higher-level motor control'''
-from time import sleep
+import asyncio
 
-import RPi.GPIO as GPIO
+# import RPi.GPIO as GPIO
 
-# import sim_hardware.sim_GPIO as GPIO  # Optional sim hardware for testing
+import sim_hardware.sim_GPIO as GPIO  # Optional sim hardware for testing
 
 
 # Module settings
@@ -136,15 +136,15 @@ class MotorController:
         else:
             raise ValueError('Error: direction must be either "CW" or "CC" (case insensitivie)')
 
-    def step(self):
+    async def step(self):
         '''Step the motor once in current direction with current microstep mode'''
         GPIO.output(self.PINS["step"], GPIO.HIGH)
-        sleep(GPIO_DELAY)
+        await asyncio.sleep(GPIO_DELAY)
         GPIO.output(self.PINS["step"], GPIO.LOW)
-        sleep(GPIO_DELAY)
         self._units = (self._units + self._dir) % (self.STEPS_PER_REV * self._mstepMode * self._gearRatio)
+        await asyncio.sleep(GPIO_DELAY)
 
-    def rotate(self, targDeg: float, ccLimit: float = None, cwLimit: float = None, useGearOut:bool = True) -> bool:
+    async def rotate(self, targDeg: float, ccLimit: float = None, cwLimit: float = None, useGearOut:bool = True) -> bool:
         '''Steps a motor to the target degree position of output gear or motor (see `useGearOut`)
 
         `targDeg`: target degree position (0 <= targDeg < 360)
@@ -172,7 +172,7 @@ class MotorController:
         for _ in range(abs(relMsteps)):
             if ((isCC and ((ccLimit is None) or not ((self._units - 1) <= self.degreesToMsteps(ccLimit, useGearOut))))
                     or (not isCC and ((cwLimit is None) or not ((self._units + 1) >= self.degreesToMsteps(cwLimit, useGearOut))))):
-                self._step()
+                await self.step()
             else:
                 print(f"{self.name}: Limit reached. Rotation failed!\n")
                 return False  # no movement

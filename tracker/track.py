@@ -3,16 +3,15 @@ import asyncio
 import json
 import math
 import sys  # argv
-import time  # sleep
 from urllib.request import urlopen
 from urllib.error import URLError
-import RPi.GPIO as GPIO
+# import RPi.GPIO as GPIO
 
 from motor_control import MotorController
 
 ### Testing ONLY ###
 # optional sim hardware
-# import sim_hardware.sim_GPIO as GPIO
+import sim_hardware.sim_GPIO as GPIO
 ### End Testing ONLY ###
 
 
@@ -69,71 +68,79 @@ def getData():
 
     return azimuth, altitude
 
+async def main():
+    ###################################
+    ### Initialize MotorControllers ###
+    ###################################
 
-###################################
-### Initialize MotorControllers ###
-###################################
+    # pins in the form (step, dir, ms1, ms2)
+    aziPins = (trackConfig["AziConf"]["AziStepGPIO"],
+            trackConfig["AziConf"]["AziDirGPIO"],
+            trackConfig["ms1pin"],
+            trackConfig["ms2pin"])
 
-# pins in the form (step, dir, ms1, ms2)
-aziPins = (trackConfig["AziConf"]["AziStepGPIO"],
-           trackConfig["AziConf"]["AziDirGPIO"],
-           trackConfig["ms1pin"],
-           trackConfig["ms2pin"])
+    altPins = (trackConfig["AltConf"]["AltStepGPIO"],
+            trackConfig["AltConf"]["AltDirGPIO"],
+            trackConfig["ms1pin"],
+            trackConfig["ms2pin"])
 
-altPins = (trackConfig["AltConf"]["AltStepGPIO"],
-           trackConfig["AltConf"]["AltDirGPIO"],
-           trackConfig["ms1pin"],
-           trackConfig["ms2pin"])
+    # constructor arguments (pins, stepsPerRev, gearRatio, name)
+    aziArgs = (aziPins, 200, trackConfig["AziConf"]["GearRatio"], "Azimuth")
+    altArgs = (altPins, 200, trackConfig["AltConf"]["GearRatio"], "Altitude")
 
-# constructor arguments (pins, stepsPerRev, gearRatio, name)
-aziArgs = (aziPins, 200, trackConfig["AziConf"]["GearRatio"], "Azimuth")
-altArgs = (altPins, 200, trackConfig["AltConf"]["GearRatio"], "Altitude")
+    # Construct Motor Controllers
+    aziMotor = MotorController(*aziArgs)
+    altMotor = MotorController(*altArgs)
 
-# Construct Motor Controllers
-aziMotor = MotorController(*aziArgs)
-altMotor = MotorController(*altArgs)
+    if VERBOSE:
+        print("\nInitial state: ")
+        aziMotor.debugSettings()
+        altMotor.debugSettings()
+        aziMotor.debugStatus()
+        altMotor.debugStatus()
 
-if VERBOSE:
-    print("\nInitial state: ")
-    aziMotor.debugSettings()
-    altMotor.debugSettings()
-    aziMotor.debugStatus()
-    altMotor.debugStatus()
-
-###################################
-
-
-########################
-### EasyDriver Setup ###
-########################
-
-GPIO.setmode(GPIO.BCM)
-GPIO.setwarnings(False)
-GPIO.setup(trackConfig["ms1pin"], GPIO.OUT)
-GPIO.setup(trackConfig["ms2pin"], GPIO.OUT)
-
-#Azimuth
-GPIO.setup(trackConfig["AziConf"]["AziStepGPIO"], GPIO.OUT)
-GPIO.setup(trackConfig["AziConf"]["AziDirGPIO"], GPIO.OUT)
-
-#Elevation
-GPIO.setup(trackConfig["AltConf"]["AltStepGPIO"], GPIO.OUT)
-GPIO.setup(trackConfig["AltConf"]["AltDirGPIO"], GPIO.OUT)
-
-########################
+    ###################################
 
 
-try:
-    #Main update loop
-    while True:
-        trackerAzimuth, trackerAltitude = getData()
+    ########################
+    ### EasyDriver Setup ###
+    ########################
 
-        if ULTRA_VERBOSE:
-            print("\n\nNew Target Azimuth: " + str(trackerAzimuth) + "\nNew Target Altitude: " + str(trackerAltitude))
+    GPIO.setmode(GPIO.BCM)
+    GPIO.setwarnings(False)
+    GPIO.setup(trackConfig["ms1pin"], GPIO.OUT)
+    GPIO.setup(trackConfig["ms2pin"], GPIO.OUT)
 
-        aziMotor.rotate(trackerAzimuth)
-        altMotor.rotate(trackerAltitude, ccLimit=trackConfig["AltConf"]["AltMin"], cwLimit=trackConfig["AltConf"]["AltMax"])
+    #Azimuth
+    GPIO.setup(trackConfig["AziConf"]["AziStepGPIO"], GPIO.OUT)
+    GPIO.setup(trackConfig["AziConf"]["AziDirGPIO"], GPIO.OUT)
 
-        time.sleep(UPDATE_DELAY)
-finally:
-    GPIO.cleanup()
+    #Elevation
+    GPIO.setup(trackConfig["AltConf"]["AltStepGPIO"], GPIO.OUT)
+    GPIO.setup(trackConfig["AltConf"]["AltDirGPIO"], GPIO.OUT)
+
+    ########################
+
+
+    try:
+        #Main update loop
+        while True:
+            trackerAzimuth, trackerAltitude = getData()
+
+            if ULTRA_VERBOSE:
+                print("\n\nNew Target Azimuth: " + str(trackerAzimuth) + "\nNew Target Altitude: " + str(trackerAltitude))
+
+            rotAzi = asyncio.create_task(aziMotor.rotate(trackerAzimuth))
+            rotAlt = asyncio.create_task(altMotor.rotate(trackerAltitude,
+                                         ccLimit=trackConfig["AltConf"]["AltMin"],
+                                         cwLimit=trackConfig["AltConf"]["AltMax"]))
+            
+            await rotAzi
+            await rotAlt
+
+            await asyncio.sleep(UPDATE_DELAY)
+    finally:
+        GPIO.cleanup()
+
+if __name__ == "__main__":
+    asyncio.run(main())
