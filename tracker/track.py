@@ -1,10 +1,11 @@
 #!/usr/bin/python
-from urllib.request import urlopen
-from urllib.error import URLError
+import asyncio
 import json
 import math
 import sys  # argv
 import time  # sleep
+from urllib.request import urlopen
+from urllib.error import URLError
 import RPi.GPIO as GPIO
 
 from motor_control import MotorController
@@ -12,7 +13,6 @@ from motor_control import MotorController
 ### Testing ONLY ###
 # optional sim hardware
 # import sim_hardware.sim_GPIO as GPIO
-# from sim_hardware.sim_motor import vMotor
 ### End Testing ONLY ###
 
 
@@ -92,13 +92,6 @@ altArgs = (altPins, 200, trackConfig["AltConf"]["GearRatio"], "Altitude")
 # Construct Motor Controllers
 aziMotor = MotorController(*aziArgs)
 altMotor = MotorController(*altArgs)
-
-### Testing ONLY ###
-# aziMotor = vMotor(*aziArgs)
-# altMotor = vMotor(*altArgs)
-# GPIO.vPlugIn(aziMotor, aziPins)
-# GPIO.vPlugIn(altMotor, altPins)
-### End Testing ONLY ###
 
 if VERBOSE:
     print("\nInitial state: ")
