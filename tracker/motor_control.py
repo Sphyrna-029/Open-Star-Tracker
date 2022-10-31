@@ -114,10 +114,10 @@ class MotorController:
         GPIO.output((self.PINS["ms1"], self.PINS["ms2"]), newState)
 
         # recalibrate to new mode resolution
-        self._msteps += MotorController._closestLoopMovement(self._msteps,
-                                                             self._msteps + (newMode - (self._msteps % newMode)),
+        self._units += MotorController._closestLoopMovement(self._units,
+                                                             self._units + (newMode - (self._units % newMode)),
                                                              newMode)
-        self._msteps = int((self._msteps * newMode) / self._mstepMode)  # convert to new mode units
+        self._units = int((self._units * newMode) / self._mstepMode)  # convert to new mode units
         self._mstepMode = newMode
 
     @property
@@ -150,13 +150,13 @@ class MotorController:
         `targDeg`: target degree position (0 <= targDeg < 360)
         `ccLimit`: inclusive counterclockwise limit in degrees. defaults to None
         `cwLimit`: inclusive clockwise limit in degrees. defaults to None
-        `useGearOut`: whether or not targDeg is in terms of output gear position or motor position. defaults to True
+        `useGearOut`: whether or not targDeg is in terms of output gear position or motor position.defaults to True
         Note: When a limit is None, it will be limitless in that direction.
         Returns True if motor moves, false otherwise.
         '''
         targDeg %= 360
         relMsteps = MotorController._closestLoopMovement(self._units, self.degreesToMsteps(targDeg, useGearOut),
-                                                         self.STEPS_PER_REV * self._mstepMode * self._gearRatio)
+                                                         int(self.STEPS_PER_REV * self._mstepMode * self._gearRatio))
 
         if not relMsteps:
             return False # no movement
@@ -170,8 +170,8 @@ class MotorController:
 
         self.direction = newDir
         for _ in range(abs(relMsteps)):
-            if ((isCC and ((ccLimit is None) or not ((self._units - 1) <= self.degreesToMsteps(ccLimit, useGearOut))))
-                    or (not isCC and ((cwLimit is None) or not ((self._units + 1) >= self.degreesToMsteps(cwLimit, useGearOut))))):
+            if ((isCC and ((ccLimit is None) or ((self._units - 1) > self.degreesToMsteps(ccLimit, useGearOut))))
+                    or (not isCC and ((cwLimit is None) or ((self._units + 1) < self.degreesToMsteps(cwLimit, useGearOut))))):
                 await self.step()
             else:
                 print(f"{self.name}: Limit reached. Rotation failed!\n")
@@ -203,8 +203,10 @@ class MotorController:
         print(self.name, "STATUS")
         print("Direction:", self.direction)
         stepLabel = "Step" if (self._mstepMode == 1) else f"Microstep (1/{self._mstepMode})"
-        print(stepLabel, "motor position:", self._units % (self.STEPS_PER_REV * self._mstepMode), "of", self.STEPS_PER_REV * self._mstepMode)
-        print(stepLabel, "gear position:", self._units % (self.STEPS_PER_REV * self._mstepMode * self._gearRatio), "of", self.STEPS_PER_REV * self._mstepMode * self._gearRatio)
+        print(stepLabel, "motor position:", self._units % (self.STEPS_PER_REV * self._mstepMode),
+              "of", self.STEPS_PER_REV * self._mstepMode)
+        print(stepLabel, "gear position:", self._units % (self.STEPS_PER_REV * self._mstepMode * self._gearRatio),
+              "of", self.STEPS_PER_REV * self._mstepMode * self._gearRatio)
         print("Motor degree position:", self.degrees)
         print("Output gear degree position:", self.gearOutDegrees)
         print()
