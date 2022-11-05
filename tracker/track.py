@@ -7,7 +7,7 @@ from urllib.request import urlopen
 from urllib.error import URLError
 # import RPi.GPIO as GPIO
 
-from motor_control import MotorController
+import motor_control
 
 ### Testing ONLY ###
 # optional sim hardware
@@ -35,9 +35,10 @@ except OSError as exc:
 
 
 # Init vars
-trackerAzimuth = 0  # Tracker Azimuth in degrees 0 - 360
-trackerAltitude = 0  # Tracker Altitude in degrees 0 - 90
+trackerAzimuth: int | None = None  # Tracker Azimuth in degrees 0 - 360
+trackerAltitude: int | None = None  # Tracker Altitude in degrees 0 - 90
 UPDATE_DELAY = 0.1  # delay between data updates and rotate commands in seconds
+MAX_ROT = 1  # maximum degree rotation interval per update
 
 
 # Get tracker data from stellarium
@@ -90,8 +91,8 @@ async def main():
     altArgs = (altPins, 200, trackConfig["AltConf"]["GearRatio"], "Altitude")
 
     # Construct Motor Controllers
-    aziMotor = MotorController(*aziArgs)
-    altMotor = MotorController(*altArgs)
+    aziMotor = motor_control.MotorController(*aziArgs)
+    altMotor = motor_control.MotorController(*altArgs)
 
     if VERBOSE:
         print("\nInitial state: ")
@@ -119,10 +120,14 @@ async def main():
     GPIO.setup(trackConfig["AltConf"]["AltDirGPIO"], GPIO.OUT)
     ########################
 
+    # set microstep mode
+    aziMotor.mstepMode = altMotor.mstepMode = trackConfig["StepMode"]
+
     GPIO.printBoard()
 
 
     try:
+        global trackerAzimuth, trackerAltitude
         # Main update loop
         while True:
             trackerAzimuth, trackerAltitude = getData()
@@ -131,13 +136,14 @@ async def main():
                 print("\n\nNew Target Azimuth: " + str(trackerAzimuth)
                       + "\nNew Target Altitude: " + str(trackerAltitude))
 
-            rotAzi = asyncio.create_task(aziMotor.rotateTo(trackerAzimuth))
-            rotAlt = asyncio.create_task(altMotor.rotateTo(trackerAltitude,
-                                                           ccLimit=trackConfig["AltConf"]["AltMin"],
-                                                           cwLimit=trackConfig["AltConf"]["AltMax"]))
-
-            await rotAzi
-            await rotAlt
+            await asyncio.gather(aziMotor.rotateTo(trackerAzimuth,
+                                                   ccLimit=(aziMotor.gearOutDegrees - MAX_ROT),
+                                                   cwLimit=(aziMotor.gearOutDegrees + MAX_ROT)),
+                                 altMotor.rotateTo(trackerAltitude,
+                                                   ccLimit=max((altMotor.gearOutDegrees - MAX_ROT),
+                                                               trackConfig["AltConf"]["AltMin"]),
+                                                   cwLimit=min((altMotor.gearOutDegrees + MAX_ROT),
+                                                               trackConfig["AltConf"]["AltMax"])))
 
             await asyncio.sleep(UPDATE_DELAY)
 
