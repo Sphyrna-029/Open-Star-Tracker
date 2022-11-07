@@ -5,13 +5,13 @@ import math
 import sys  # argv
 from urllib.request import urlopen
 from urllib.error import URLError
-# import RPi.GPIO as GPIO
+import RPi.GPIO as GPIO
 
 import motor_control
 
 ### Testing ONLY ###
 # optional sim hardware
-import sim_hardware.sim_GPIO as GPIO
+# import sim_hardware.sim_GPIO as GPIO
 ### End Testing ONLY ###
 
 

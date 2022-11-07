@@ -1,14 +1,15 @@
 '''Provides the MotorController class for high-level motor control'''
 import asyncio
+sleep = asyncio.sleep
 
-# import RPi.GPIO as GPIO
+import RPi.GPIO as GPIO
 
-import sim_hardware.sim_GPIO as GPIO  # Optional sim hardware for testing
+# import sim_hardware.sim_GPIO as GPIO  # Optional sim hardware for testing
+# from sim_hardware.sim_GPIO import hiResASleep as sleep  # high res async sleep for Windows testing
 
 
 # Module settings
 _VERBOSE = True
-
 
 def closestLoopDiff(a: int, b: int, loopSize: int) -> int:
     '''In a "loop" of positive integers (think modulo) of size `loopSize`,
@@ -155,10 +156,10 @@ class MotorController:
     async def step(self):
         '''Step the motor one step/mstep in current direction with current microstep mode'''
         GPIO.output(self.PINS["step"], GPIO.HIGH)
-        await asyncio.sleep(GPIO_DELAY)
+        await sleep(GPIO_DELAY)
         GPIO.output(self.PINS["step"], GPIO.LOW)
         self._units = (self._units + self._dir) % (self.STEPS_PER_REV * self._mstepMode * self._gearRatio)
-        await asyncio.sleep(GPIO_DELAY)
+        await sleep(GPIO_DELAY)
 
     async def rotateMsteps(self, msteps: int, ccLimitMstep: int | None = None,
                            cwLimitMstep: int | None = None) -> bool:
